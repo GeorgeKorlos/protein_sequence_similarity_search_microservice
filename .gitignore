@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Data / artifacts
+data/*
+!data/data_source.md
+*.faiss
+*.index
+*.npy
+*.pt
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Build
+dist/
+build/
+*.egg-info/
+
+# Docker (optional depending on workflow)
+*.tar
+
+# Env files
+.env
