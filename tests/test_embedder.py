@@ -1,6 +1,5 @@
 from src.core.embedder import ESM2Embedder
 import numpy as np
-import torch
 
 embedder = ESM2Embedder()
 sequence = "MKTAYIAKQRQISFVKSHFSRQ"
