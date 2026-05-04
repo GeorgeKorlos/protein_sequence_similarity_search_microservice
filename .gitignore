@@ -44,3 +44,6 @@ build/
 # Env files
 .envlogs/
 logs/
+
+# throwaway
+scratch
