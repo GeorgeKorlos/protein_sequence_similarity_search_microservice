@@ -1,0 +1,2 @@
+class IndexNotReadyError(Exception):
+    pass
