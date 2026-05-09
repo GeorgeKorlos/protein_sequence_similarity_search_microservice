@@ -49,6 +49,7 @@ class IndexManager:
         elif self.index_type == "IndexHNSWFlat":
             M = self.params.get("M", 32)
             self.index = faiss.IndexHNSWFlat(self.dim, M, faiss.METRIC_INNER_PRODUCT)
+            self.index.hnsw.efConstruction = self.params.get("efConstruction", 200)
             self.index.add(embeddings)  # type: ignore[arg-type]
             self.is_trained = True
             self.built_at = datetime.datetime.utcnow().isoformat()
