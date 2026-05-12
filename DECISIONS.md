@@ -36,11 +36,23 @@ At approximately **45 QPS**, the implied median query latency is:
 
 This latency is suitable for interactive API workloads and provides enough headroom for downstream application logic and network overhead within a standard sub-100ms response budget.
 
+Per preregistration, the success criterion was Recall@10 ≥ 0.95 for HNSW. HNSW achieved 0.9655 at efSearch=128, satisfying this threshold. IVFFlat was selected instead because benchmark evidence supported a stricter 0.99 operating point, which HNSW does not reach at any evaluated efSearch value.
+
 ## Distance Metric
+
+**Choice**: Cosine similarity via inner product on L2-normalized vectors (METRIC_INNER_PRODUCT)
+
+**Rationale**: All embeddings are L2-normalized in ESM2Embedder.embed_tokenized before being added to the index. On unit-length vectors, inner product is mathematically equivalent to cosine similarity, so no separate normalization step is needed at search time. Cosine similarity is magnitude-invariant — two proteins with similar functional representations but different sequence lengths produce embedding vectors of different magnitudes before normalization; cosine captures directional similarity regardless of magnitude, which is appropriate for semantic comparison. METRIC_INNER_PRODUCT is enforced consistently at index build time in IndexManager, at query time in Searcher.search, and the query vector norm is explicitly asserted before search to catch any normalization failures at runtime.
 
 ## Pooling Strategy
 
+**Choice**: Mean pooling over residue token embeddings, excluding BOS and EOS special tokens
+
+**Rationale**: Mean pooling produces a fixed-size sequence representation that aggregates information across all residue positions equally, appropriate for whole-sequence functional similarity rather than residue-level tasks. Special tokens (BOS/EOS) are excluded via the hidden_states[:, 1:-1, :] slice in ESM2Embedder._mean_pool — including them would inject non-residue signal into the sequence representation.
+
 ## Sequence Length Cap
+
+ESM-2 maximum context window is 1024 tokens; sequences beyond this are truncated by the tokenizer anyway, so the cap makes the filtering explicit and documented rather than silent. From the corpus statistics, only a small fraction of SwissProt sequences exceed 1024 aa — the cap removes biologically extreme outliers without meaningful corpus loss.
 
 ## Batch Size
 
@@ -90,5 +102,9 @@ SwissProt is manually reviewed — every entry has experimentally supported func
 **Citation:** The UniProt Consortium, *Nucleic Acids Research* 2023. DOI: 10.1093/nar/gkac1052
 
 ## Embedding Normalization
+
+**Choice**: L2 normalization applied post-pooling, before index insertion and before search
+
+**Rationale**: Normalization converts raw pooled embeddings to unit vectors, enabling inner product to function as cosine similarity throughout the pipeline. Applied once in embed_tokenized for corpus embeddings, and verified at query time via norm assertion in Searcher.search.
 
 ## Cloud Platform
