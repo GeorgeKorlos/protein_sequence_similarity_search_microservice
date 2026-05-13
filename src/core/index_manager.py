@@ -57,6 +57,13 @@ class IndexManager:
         else:
             raise ValueError(f"Unknown index_type: {self.index_type}")
 
+    def _hash_file(self, path: Path) -> str:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
     def save(self, path: str | Path):
         path = Path(path)
         path.mkdir(parents=True, exist_ok=True)
@@ -69,10 +76,7 @@ class IndexManager:
 
         faiss.write_index(self.index, str(index_file))
 
-        with open(index_file, "rb") as f:
-            index_bytes = f.read()
-
-        index_hash = hashlib.sha256(index_bytes).hexdigest()
+        index_hash = self._hash_file(index_file)
         self.checksum = index_hash
 
         meta = {
@@ -98,10 +102,7 @@ class IndexManager:
         with open(meta_file, "r") as f:
             meta = json.load(f)
 
-        with open(index_file, "rb") as f:
-            index_bytes = f.read()
-
-        index_hash = hashlib.sha256(index_bytes).hexdigest()
+        index_hash = self._hash_file(index_file)
 
         if index_hash != meta["checksum"]:
             raise ValueError("Index corrupted")
@@ -115,6 +116,9 @@ class IndexManager:
         self.checksum = meta["checksum"]
         self.corpus_version = meta.get("corpus_version", "unknown")
         self.model_version = meta.get("model_version", "unknown")
+
+        if self.index_type == "IndexIVFFlat" and "nprobe" in self.params:
+            self.index.nprobe = self.params["nprobe"]
 
     @property
     def index_version(self):
