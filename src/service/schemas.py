@@ -31,7 +31,7 @@ class SearchResponse(BaseModel):
     query_length: int
     results: list[SearchResult]
     model_version: str
-    index_version: str
+    index_version: dict
     request_id: str
 
 
@@ -40,7 +40,7 @@ class HealthResponse(BaseModel):
     service_version: str
     model_version: str
     corpus_version: str
-    index_version: str
+    index_version: dict
 
 
 class ReadyResponse(BaseModel):
