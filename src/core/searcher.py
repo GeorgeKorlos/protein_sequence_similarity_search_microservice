@@ -1,5 +1,5 @@
 import numpy as np
-from src.core.exceptions import IndexNotReadyError
+from src.core.exceptions import IndexNotReadyException
 
 
 class Searcher:
@@ -10,7 +10,7 @@ class Searcher:
         self.index_manager = index_manager
 
         if self.index_manager.is_trained is False:
-            raise IndexNotReadyError
+            raise IndexNotReadyException
 
     def search(self, sequence: str, k: int = 10):
         query_vector = self.embedder.embed([sequence])
