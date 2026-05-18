@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from src.service.routes import router
 from src.core.searcher import Searcher
 from src.service.config import settings
+from src.obs.metrics import errors_total
 from contextlib import asynccontextmanager
 from src.core.embedder import ESM2Embedder
 from fastapi.responses import JSONResponse
@@ -54,7 +55,7 @@ async def lifespan(app: FastAPI):
         {
             "service_version": str(SERVICE_VERSION),
             "model_version": str(app.state.embedder.model_version),
-            "index_version": str(app.state.index_manager.index_version),
+            "index_version": str(app.state.index_manager.index_version["checksum"]),
             "python_version": str(platform.python_version()),
         }
     )
@@ -88,6 +89,7 @@ async def service_exception_handler(
     error_response = ErrorResponse(
         error_code=exc.error_code, message=exc.message, request_id=request_id
     )
+    errors_total.labels(error_code=exc.error_code).inc()
 
     return JSONResponse(
         status_code=exc.http_status, content=error_response.model_dump()

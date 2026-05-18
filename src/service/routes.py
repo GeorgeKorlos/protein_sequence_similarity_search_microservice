@@ -1,12 +1,18 @@
+import time
 import asyncio
 import logging
 from src.core.searcher import Searcher
-from fastapi.responses import JSONResponse, PlainTextResponse
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from fastapi.responses import JSONResponse, Response
 from src.core.embedder import ESM2Embedder
 from src.core.validator import SequenceValidator
 from fastapi import APIRouter, Request, Depends
+from src.obs.metrics import (
+    model_inference_seconds,
+    embed_batch_size,
+    faiss_search_seconds,
+)
 from src.core.exceptions import (
-    ServiceException,
     InvalidSequenceException,
     EmbeddingFailedException,
     SearchFailedException,
@@ -63,10 +69,15 @@ async def embed(
             raise InvalidSequenceException(str(exc)) from exc
 
     try:
+        embed_start = time.perf_counter()
         embeddings = await asyncio.to_thread(
             embedder.embed,
             validated_sequences,
         )
+        end = time.perf_counter() - embed_start
+
+        model_inference_seconds.observe(end)
+        embed_batch_size.observe(len(validated_sequences))
 
     except Exception as exc:
         raise EmbeddingFailedException(
@@ -97,9 +108,13 @@ async def search(
         raise IndexNotReadyException("Index is not loaded.")
 
     try:
+        search_start = time.perf_counter()
         search_results = await asyncio.to_thread(
             searcher.search, validated_sequence, payload.top_k
         )
+        end = time.perf_counter() - search_start
+
+        faiss_search_seconds.observe(end)
 
     except Exception as exc:
         logger.error("Search failed: %s", exc, exc_info=True)
@@ -148,5 +163,5 @@ async def ready(request: Request):
 
 
 @router.get("/metrics")
-async def metrics() -> PlainTextResponse:
-    return PlainTextResponse(content="# metrics placeholder\n")
+async def metrics() -> Response:
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
