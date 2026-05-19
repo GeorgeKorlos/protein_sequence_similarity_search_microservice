@@ -20,6 +20,8 @@ class JsonFormatter(logging.Formatter):
             "seq_len_max": getattr(record, "seq_len_max", None),
             "error_code": getattr(record, "error_code", None),
         }
+        if record.exc_info:
+            log_dict["traceback"] = self.formatException(record.exc_info)
         return json.dumps(log_dict)
 
 

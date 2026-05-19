@@ -31,14 +31,14 @@ async def lifespan(app: FastAPI):
     app.state.corpus = CorpusStore(csv_path=settings.corpus_path)
 
     app.state.embedder = ESM2Embedder(
-        model_tag=settings.model_tag, device=settings.device
+        model_tag=settings.model_tag, device=settings.device, compile_model=False
     )
     try:
         app.state.embedder.embed(["ACDE"])
         app.state.model_loaded = True
     except Exception as e:
         app.state.model_loaded = False
-        logger.error("Model failed to load: %s", e)
+        logger.error("Model failed to load: %s", e, exc_info=True)
 
     app.state.index_manager = IndexManager(index_type="", dim=0, params=None)
     try:
