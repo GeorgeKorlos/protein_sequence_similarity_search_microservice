@@ -2,6 +2,7 @@ import uuid
 import pytest
 from src.service.main import app
 from fastapi.testclient import TestClient
+from unittest.mock import patch, MagicMock
 
 
 @pytest.fixture(scope="module")
@@ -163,6 +164,23 @@ def test_request_ids_are_unique(client):
     assert len(set(request_ids)) == 10
 
 
+def test_embed_embedding_failed_returns_500(client):
+    with patch(
+        "src.service.routes.asyncio.to_thread", side_effect=RuntimeError("GPU OOM")
+    ):
+        response = client.post("/embed", json={"sequences": ["ACDEFGH"]})
+    assert response.status_code == 500
+    assert response.json()["error_code"] == "EMBEDDING_FAILED"
+
+
+def test_embed_payload_too_large_returns_413(client):
+    # max_payload_size from config — construct batch that exceeds it
+    sequences = ["A" * 2000] * 30  # 60,000 chars > 50,000 default
+    response = client.post("/embed", json={"sequences": sequences})
+    assert response.status_code == 413
+    assert response.json()["error_code"] == "PAYLOAD_TOO_LARGE"
+
+
 # /search
 def test_search_valid_sequence_returns_top_k_results(client):
     response = client.post(
@@ -217,7 +235,30 @@ def test_search_top_k_above_maximum_returns_422(client):
     assert response.status_code == 422
 
 
+def test_search_search_failed_returns_500(client):
+    with patch(
+        "src.service.routes.asyncio.to_thread", side_effect=RuntimeError("FAISS error")
+    ):
+        response = client.post("/search", json={"sequence": "ACDEFGH"})
+    assert response.status_code == 500
+    assert response.json()["error_code"] == "SEARCH_FAILED"
+
+
+def test_search_index_not_ready_returns_503(client):
+    with patch.object(client.app.state, "index_loaded", False):
+        response = client.post("/search", json={"sequence": "ACDEFGH"})
+    assert response.status_code == 503
+    assert response.json()["error_code"] == "INDEX_NOT_READY"
+
+
 # /metrics
 def test_metrics_returns_200(client):
     response = client.get("/metrics")
     assert response.status_code == 200
+
+
+def test_metrics_returns_prometheus_content_type(client):
+    response = client.get("/metrics")
+    assert response.status_code == 200
+    assert "text/plain" in response.headers["content-type"]
+    assert "http_requests_total" in response.text
