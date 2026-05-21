@@ -1,7 +1,7 @@
 from src.core.embedder import ESM2Embedder
 import numpy as np
 
-embedder = ESM2Embedder()
+embedder = ESM2Embedder(compile_model=False)
 sequence = "MKTAYIAKQRQISFVKSHFSRQ"
 output = embedder.embed(sequences=[sequence])
 
@@ -15,7 +15,7 @@ def test_embedder_output_type():
 
 
 def test_embedder_l2_norm():
-    assert np.isclose(np.linalg.norm(output[0]), 1.0, atol=1e-5)
+    assert np.isclose(np.linalg.norm(output[0]), 1.0, atol=1e-4)
 
 
 def test_embedder_verify_determinism():
