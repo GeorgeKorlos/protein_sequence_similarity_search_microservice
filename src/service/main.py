@@ -51,14 +51,15 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         app.state.index_loaded = False
         logger.error("Index failed to load %s", e)
-    service_build_info.info(
-        {
-            "service_version": str(SERVICE_VERSION),
-            "model_version": str(app.state.embedder.model_version),
-            "index_version": str(app.state.index_manager.index_version["checksum"]),
-            "python_version": str(platform.python_version()),
-        }
-    )
+    if app.state.model_loaded and app.state.index_loaded:
+        service_build_info.info(
+            {
+                "service_version": str(SERVICE_VERSION),
+                "model_version": str(app.state.embedder.model_version),
+                "index_version": str(app.state.index_manager.index_version["checksum"]),
+                "python_version": str(platform.python_version()),
+            }
+        )
     app.state.validator = SequenceValidator(
         max_batch_size=settings.max_batch_size,
         max_payload_size=settings.max_payload_size,
