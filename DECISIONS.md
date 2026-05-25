@@ -175,3 +175,57 @@ correct choice at production scale but are out of scope for P4.
 - All codes that are reachable via normal input validation are covered.
 
 ## Cloud Platform
+
+**Status:** Accepted
+
+**Choice:** GCP Cloud Run, europe-west1
+
+### Options considered and rejected
+
+| Platform | Decision | Reason |
+|---|---|---|
+| GCP Cloud Run | **Selected** | Serverless containers, per-request billing, zero infra management |
+| GCP Compute Engine | Rejected | Always-on cost not justified for demo workload with sporadic traffic |
+| AWS Lambda | Rejected | 10 GB ephemeral storage limit cannot fit ESM-2 weights (1.3 GB) + FAISS index (2.7 GB) simultaneously |
+| Fly.io | Rejected | Less recognizable to academic reviewers than GCP |
+
+### Rationale
+Cloud Run handles containerized workloads with zero infrastructure management.
+Per-request billing suits a demo workload with infrequent queries. europe-west1
+chosen for geographic proximity to deployment region.
+
+### Memory configuration
+Initial deployment used 8Gi limit. Container was OOM-killed at 8,206 MiB on two
+consecutive revisions (measured). Limit increased to 16Gi. Actual measured peak
+footprint at startup: ~8.2 GB (model fp16 1.3 GB + FAISS index 2.7 GB + runtime
+buffers ~4.1 GB).
+
+### CPU inference latency (measured)
+Cloud Run standard tier is CPU-only in europe-west1. Measured on warm instance,
+37 aa sequence, 10 requests:
+
+| Metric | Value |
+|---|---|
+| p50 | 23.4s |
+| p95 | 24.8s |
+
+GPU baseline (RTX 3090, corpus embedding): ~10–15 ms/sequence. CPU is ~1500–2500x
+slower. Acceptable for portfolio demonstration; not suitable for production
+interactive workloads.
+
+Note: float16 weights loaded via `low_cpu_mem_usage=True` to avoid peak RAM spike
+during checkpoint loading. float16 does not improve CPU inference latency — CPUs
+lack native fp16 compute and perform internal conversion.
+
+### Index delivery
+FAISS index (2.7 GB) stored in GCS (`gs://protein-search-497311-index/ivf/`) and
+downloaded at container startup via `scripts/entrypoint.sh` +
+`scripts/gcs_download.py`. Uses Python `google-cloud-storage` SDK — gcloud CLI
+not available in `python:3.10-slim` base image.
+
+### `/metrics` access
+Publicly accessible on Cloud Run. Acceptable for portfolio demo — no sensitive
+data in Prometheus metrics. Production deployment should IAM-gate this endpoint.
+
+### Service URL
+https://protein-search-699950260063.europe-west1.run.app

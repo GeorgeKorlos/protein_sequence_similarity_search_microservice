@@ -308,24 +308,24 @@ ls -lh data/indexes/ivf/index.faiss
 
 **Issue**: First request after service startup takes 60–90 seconds.
 
-**Cause**: ESM-2 model weights are baked into the Docker image at build time via `AutoModel.from_pretrained()`. Cold start is the model being deserialized from disk and loaded into GPU memory on the first `/health` or `/embed` request.
+**Cause**: ESM-2 model weights are baked into the Docker image at build time via `AutoModel.from_pretrained()`. Cold start includes GCS index download (~2.7 GB, adds 60–90s) followed by model deserialization and corpus load into CPU memory.
 
 **Mitigation**:
 - Model is pre-downloaded and cached at build time (see Dockerfile), so no network download occurs at runtime
-- Send a dummy health check request immediately after deployment to warm up the model and move it into GPU memory
+- The GCS index download dominates cold start time (~60–90s); model load adds ~40s on CPU
 - Set Cloud Run minimum instances to 1 (costs ~$7/month) to keep the service warm and avoid cold starts entirely
 
-### 2. Memory Limit (8 GiB on Cloud Run)
+### 2. Memory Limit (16 GiB on Cloud Run)
 
 **Issue**: Service can run out of memory if index + model + corpus are too large.
 
 **Current footprint**:
-- ESM-2 650M model: ~1.3 GB (GPU)
+- ESM-2 650M model: ~1.3 GB (float16, CPU; loaded via low_cpu_mem_usage=True)
 - Corpus (547K sequences metadata): ~50 MB
 - FAISS IVFFlat index: ~2.7 GB (CPU RAM, loaded on startup)
 - Request buffers: ~100–500 MB
 
-**Total**: ~4.2 GB (comfortably under 8 GiB limit, but no room for concurrent batch requests)
+**Total**: ~8.2 GB (measured peak at startup — exceeded 8Gi limit on two revisions; 16Gi required)
 
 **Mitigation**:
 - **Avoid large batch `/embed` requests** — max 256 sequences, but CPU-only mode will spike memory
@@ -337,14 +337,14 @@ ls -lh data/indexes/ivf/index.faiss
 
 **Issue**: Setting `device=cpu` causes severe latency degradation.
 
-**Latency impact** (estimated, single sequence):
+**Latency impact** (measured, single sequence):
 - **GPU (CUDA)**: ~10–15 ms per sequence (benchmarked on RTX 3090)
-- **CPU**: ~1–3 seconds per query (estimated on Cloud Run 4-core CPU, unoptimized)
-- **Speedup**: CPU is **50–100x slower** than GPU
+- **CPU**: ~23s p50, ~24.8s p95 (measured on Cloud Run, europe-west1, 4 vCPU, warm instance)
+- **Speedup**: CPU is **~1500–2500x slower** than GPU
 
 **Throughput impact** (per `/embed` call, batch of 32 sequences):
 - **GPU**: ~80 sequences/sec
-- **CPU**: ~1–2 sequences/sec (estimated)
+- **CPU**: <0.1 sequences/sec (measured)
 
 **When to use CPU mode**:
 - Local development (no GPU available)
@@ -373,6 +373,58 @@ From benchmark (500 query evaluation):
 - **HNSW**: Fastest (~0.6ms), but requires tuning `efSearch` for accuracy
 
 ---
+
+## Cloud Run Operations
+
+**Live service URL**: https://protein-search-699950260063.europe-west1.run.app
+
+### Deploy a new image version
+```bash
+docker build -t protein-search:latest .
+docker tag protein-search:latest \
+  europe-west1-docker.pkg.dev/protein-search-497311/protein-search/protein-search:latest
+docker push \
+  europe-west1-docker.pkg.dev/protein-search-497311/protein-search/protein-search:latest
+gcloud run deploy protein-search \
+  --image europe-west1-docker.pkg.dev/protein-search-497311/protein-search/protein-search:latest \
+  --region europe-west1
+```
+
+### Check service status
+```bash
+gcloud run services describe protein-search --region europe-west1
+```
+
+### Check Cloud Run logs
+```bash
+gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=protein-search" \
+  --limit 50 \
+  --format "value(textPayload)"
+```
+
+### Roll back to previous revision
+```bash
+# List revisions
+gcloud run revisions list --service protein-search --region europe-west1
+
+# Route traffic to a specific revision
+gcloud run services update-traffic protein-search \
+  --region europe-west1 \
+  --to-revisions REVISION_NAME=100
+```
+
+### Tear down (cost cleanup)
+```bash
+# Delete Cloud Run service
+gcloud run services delete protein-search --region europe-west1
+
+# Delete index from GCS
+gsutil rm -r gs://protein-search-497311-index
+
+# Delete image from Artifact Registry
+gcloud artifacts docker images delete \
+  europe-west1-docker.pkg.dev/protein-search-497311/protein-search/protein-search --delete-tags
+```
 
 ## Troubleshooting
 
